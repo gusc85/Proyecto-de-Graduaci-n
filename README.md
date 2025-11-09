@@ -66,9 +66,9 @@ Puedes operar manualmente con los knobs o activar el barrido automático con el 
 ---
 
 
-# brazo_fuzzy_gui_3d_mejorado — Simulador 3DOF con DLS + PID/LQR/Fuzzy
+# Brazo 3DOF con DLS + PID/LQR/Fuzzy
 
-## 📦 Requisitos
+## Requisitos
 - MATLAB R2021b o superior
 - Control System Toolbox (para dlqr)
 - Fuzzy Logic Toolbox (para mamfis, readfis, addInput, addMF, addRule, evalfis)  
@@ -77,7 +77,7 @@ Puedes operar manualmente con los knobs o activar el barrido automático con el 
 
 ---
 
-## 🚀 Ejecución
+## Ejecución
 Desde el Command Window:
 ```matlab
 brazo_fuzzy_gui_3d_mejorado
@@ -90,7 +90,7 @@ Al ejecutar se abre la ventana principal con:
 
 ---
 
-## 🖥️ Interfaz gráfica
+## Interfaz gráfica
 - Pestaña Control
   - Selector de modo: DLS + PID, DLS + LQR, DLS + Fuzzy Centroid, DLS + Fuzzy Bisector
   - Objetivo cartesiano X, Y, Z
@@ -129,7 +129,7 @@ Al ejecutar se abre la ventana principal con:
 
 ---
 
-## 🗂️ Estructura del archivo
+## Estructura del archivo
 - Función principal
   - parámetros del sistema, límites articulares, objetivos y tiempos por modo
   - creación de la ventana, pestañas, controles y callbacks
@@ -157,7 +157,7 @@ Al ejecutar se abre la ventana principal con:
 
 ---
 
-## 🛠️ Solución de problemas
+## Solución de problemas
 - Error Undefined function dlqr
   - instala y habilita Control System Toolbox
 - Error Undefined function mamfis, readfis, addMF, evalfis
@@ -176,5 +176,68 @@ Al ejecutar se abre la ventana principal con:
   - revisa objetivos fuera de alcanzabilidad; el código los clampa, pero puede requerir más tiempo
 - Colores o estilos de líneas
   - se definen en drawWorkspace3D, drawArm3D y setupLivePlot; edítalos ahí si necesitas otro look
+
+---
+
+# Péndulo Invertido con PID, LQR y Fuzzy
+
+## Requisitos
+- MATLAB R2021b o superior  
+- Control System Toolbox (para `lqr`) — opcional, el código usa valores por defecto si no está disponible  
+- No requiere archivos externos: el FIS se construye dentro del script  
+
+---
+
+## Ejecución
+Desde la ventana de comandos de MATLAB:
+```matlab
+pendulo_pid_lqr_fuzzy
+```
+Al ejecutar, se abrirá una ventana interactiva con:
+- Animación del péndulo en 2D  
+- Gráficas en tiempo real de ángulo y torque  
+- Panel de estado con valores numéricos  
+- Botones de simulación, reinicio y batch  
+
+---
+
+## Interfaz gráfica
+- Panel izquierdo: animación del péndulo con barra y masa móvil  
+- Panel superior derecho: gráfica θ (grados) y torque u (N·m) vs tiempo  
+- Pestañas de control:
+  - **⚙️ Control:** selección de modo, ángulo inicial, opciones de arrastre con mouse, auto-detención, y botones (Simular, Detener, Reiniciar, Guardar batch)
+  - **🔵 PID:** parámetros Kp, Ki, Kd  
+  - **🟢 LQR:** pesos Q11, Q22 y R, botón para recalcular K  
+  - **🟠 Fuzzy:** parámetros Ko, Kmin, Kmax, tolerancia angular y método de defuzzificación (Centroid o Bisector)
+- Panel “📊 Estado Actual”: muestra el ángulo, velocidad angular, torque y tiempo actual con colores dinámicos según magnitud
+
+---
+
+## Estructura del archivo
+- Función principal: define los parámetros del sistema, crea la GUI y gestiona la simulación
+- Secciones internas:
+  - Configuración física y de controladores (PID, LQR, Fuzzy)
+  - Callbacks para botones, sliders y ediciones
+  - Temporizador (`TMR`) para actualizar la simulación en tiempo real
+  - Rutinas de graficado y visualización
+  - Lógica de auto-stop con verificación de convergencia
+  - Función automática para generar gráfica de error vs tiempo
+  - Función de batch para comparar los 4 métodos y exportar resultados
+
+---
+
+## Solución de problemas
+- Error `Undefined function lqr`  
+  Instala y habilita Control System Toolbox o usa las ganancias por defecto [10 2]
+- Simulación lenta o congelada  
+  Reduce la duración máxima (`tmax_pid`, `tmax_lqr`, etc.) o cierra figuras previas con `close all`
+- La animación no responde  
+  Verifica que el temporizador (`TMR`) esté en ejecución y que no haya errores en consola
+- La gráfica de error no aparece  
+  Asegúrate de detener la simulación con el botón **Detener** o que el auto-stop esté activo
+- Los resultados del batch no se guardan  
+  Revisa permisos de escritura y que la carpeta seleccionada exista
+- Colores y estilos  
+  Se pueden editar dentro de las funciones `refreshSim`, `refreshPlotAll` y `simulate_compare_and_save`
 
 ---
