@@ -776,13 +776,21 @@ set(fig, 'WindowScrollWheelFcn', @(~, evt) onScroll(evt));
             figErr = figure('Name', 'Análisis de Error - Post Simulación', ...
                 'Color', 'w', 'Position', [100 100 900 450]);
 
-            plot(tvec, err_hist(1:kend), 'LineWidth', 2, 'Color', [0.8 0.2 0.2]);
+            plot(tvec, err_hist(1:kend), ...
+            'LineWidth', 2, ...
+            'Color', [0.8 0.2 0.2], ...
+            'DisplayName', 'Error');
+        
             grid on; hold on;
+            
             yline(tol, '--k', 'LineWidth', 1.5, 'DisplayName', 'Tolerancia');
-            xlabel('Tiempo (s)', 'FontSize', 10);
-            ylabel('‖e‖ (unidades)', 'FontSize', 10);
-            title('Norma del Error Cartesiano vs Tiempo', 'FontWeight', 'bold');
-            legend('Location', 'best', 'FontSize', 9);
+            
+            xlabel('Tiempo (s)', 'FontSize', 14);
+            ylabel('‖e‖ (unidades)', 'FontSize', 14);
+            title('Norma del Error Cartesiano vs Tiempo', 'FontWeight', 'bold', 'FontSize', 14);
+            
+            legend('Location', 'best', 'FontSize', 14);
+
         end
 
         % Construcción de gráfica de ganancias adaptativas (solo Fuzzy)
@@ -797,10 +805,10 @@ set(fig, 'WindowScrollWheelFcn', @(~, evt) onScroll(evt));
                 plot(tvec, Ky_hist(1:kend), 'LineWidth', 2, 'Color', [0.2 0.7 0.2], 'DisplayName', 'Ky');
                 plot(tvec, Kz_hist(1:kend), 'LineWidth', 2, 'Color', [0.2 0.4 0.8], 'DisplayName', 'Kz');
 
-                xlabel('Tiempo (s)', 'FontSize', 10);
-                ylabel('Ganancia K (grados)', 'FontSize', 10);
-                title('Evolución de Ganancias Adaptativas (Fuzzy)', 'FontWeight', 'bold');
-                legend('Location', 'best', 'FontSize', 10);
+                xlabel('Tiempo (s)', 'FontSize', 14);
+                ylabel('Ganancia K (grados)', 'FontSize', 14);
+                title('Evolución de Ganancias Adaptativas (Fuzzy)', 'FontWeight', 'bold','FontSize', 14);
+                legend('Location', 'best', 'FontSize', 14);
             end
         end
     end
@@ -891,216 +899,359 @@ set(fig, 'WindowScrollWheelFcn', @(~, evt) onScroll(evt));
     end
 
     function onSaveBatch(~, ~)
-        % Preparación y ejecución de corridas automáticas (batch) con guardado de resultados
-        outdir = uigetdir('', 'Selecciona carpeta para guardar resultados batch');
-        if isequal(outdir, 0)
-            updateInfo('❌ Guardado cancelado', [1 0.9 0.8]);
-            return;
+    % Preparación y ejecución de corridas automáticas (batch) con guardado de resultados
+    outdir = uigetdir('', 'Selecciona carpeta para guardar resultados batch');
+    if isequal(outdir, 0)
+        updateInfo('❌ Guardado cancelado', [1 0.9 0.8]);
+        return;
+    end
+
+    % Lectura y validación de eslabones
+    L1v = str2double(get(edL1, 'String'));
+    L2v = str2double(get(edL2, 'String'));
+    if any(isnan([L1v L2v]))
+        updateInfo('⚠️ L1/L2 inválidos', [1 0.8 0.8]);
+        return;
+    end
+    L1 = L1v; L2 = L2v;
+    rmin = abs(L1 - L2); rmax = L1 + L2;
+
+    % Definición del plano Z para los objetivos del batch
+    z_plane = str2double(get(edZ, 'String'));
+    if isnan(z_plane), z_plane = 0; end
+
+    % Cálculo de radios alcanzables en el plano z
+    rho_max = sqrt(max(rmax^2 - z_plane^2, 0));
+    rho_min = sqrt(max(rmin^2 - z_plane^2, 0));
+
+    if rho_max < 1e-6
+        updateInfo('⚠️ No hay alcanzabilidad en ese z', [1 0.8 0.8]);
+        return;
+    end
+
+    % Construcción de objetivos (N puntos en círculo)
+    rho = max(rho_min, 0.75 * rho_max);
+    NPTS = 12;
+    ths  = linspace(0, 2*pi, NPTS + 1); ths(end) = [];
+    targets = zeros(NPTS, 3);
+
+    for i = 1:NPTS
+        [xx, yy] = clampXYGivenZ(rho * cos(ths(i)), rho * sin(ths(i)), ...
+                                 z_plane, rmin, rmax);
+        targets(i, :) = [xx, yy, z_plane];
+    end
+
+    % Captura de opciones para batch (ruido, lambda adaptativo y PID/LQR/Fuzzy)
+    noise_on_b       = logical(get(chkNoise, 'Value'));
+    sigma_noise_b    = valOrZero(get(edSigma, 'String'));
+    lambda_soft_on_b = logical(get(chkLamSoft, 'Value'));
+    a_mu_b           = valOrZero(get(edAMu, 'String'));
+    b_kappa_b        = valOrZero(get(edBK, 'String'));
+
+    Kp_b = str2double(get(edKp, 'String')); if isnan(Kp_b), Kp_b = Kp_def; end
+    Ki_b = str2double(get(edKi, 'String')); if isnan(Ki_b), Ki_b = Ki_def; end
+    Kd_b = str2double(get(edKd, 'String')); if isnan(Kd_b), Kd_b = Kd_def; end
+
+    Qx_b = posOrDefault(get(edQx, 'String'), Qx_def);
+    Qy_b = posOrDefault(get(edQy, 'String'), Qy_def);
+    Qz_b = posOrDefault(get(edQz, 'String'), Qz_def);
+    Rv_b = posOrDefault(get(edR,  'String'), R_def);
+
+    Kmin_b = str2double(get(edKmin, 'String'));
+    if isnan(Kmin_b), Kmin_b = K_min_deg; end
+    Kmax_b = str2double(get(edKmax, 'String'));
+    if isnan(Kmax_b), Kmax_b = K_max_deg; end
+
+    tol_b = str2double(get(edTol, 'String'));
+    if ~isfinite(tol_b) || tol_b <= 0, tol_b = 0.02; end
+
+    % Definición de modos incluidos en el batch
+    modeIds   = [1 2 3 4];
+    modeNames = {'PID', 'LQR', 'Fuzzy-Centroid', 'Fuzzy-Bisector'};
+
+    % Inicialización de estructura de resultados
+    init_theta = [theta1; theta2; theta3];
+    rows = [];
+
+    updateInfo('⏳ Ejecutando batch...', [1 1 0.8]);
+
+    % Construcción de barra de progreso
+    wb = waitbar(0, 'Ejecutando simulaciones batch...');
+    totalSims = numel(modeIds) * NPTS;
+    simCount  = 0;
+    % Bucle por modos y objetivos
+    for m = 1:numel(modeIds)
+        modeIdx_batch = modeIds(m);
+        tcur = init_theta;
+
+        % Ajuste del método de defuzzificación para el modo Fuzzy
+        fisBatch = fis1;
+        if modeIdx_batch == 3
+            try, fisBatch.DefuzzificationMethod = 'centroid'; end
+        elseif modeIdx_batch == 4
+            try, fisBatch.DefuzzificationMethod = 'bisector'; end
         end
-
-        % Lectura y validación de eslabones
-        L1v = str2double(get(edL1, 'String'));
-        L2v = str2double(get(edL2, 'String'));
-        if any(isnan([L1v L2v]))
-            updateInfo('⚠️ L1/L2 inválidos', [1 0.8 0.8]);
-            return;
-        end
-        L1 = L1v; L2 = L2v;
-        rmin = abs(L1 - L2); rmax = L1 + L2;
-
-        % Definición del plano Z para los objetivos del batch
-        z_plane = str2double(get(edZ, 'String'));
-        if isnan(z_plane), z_plane = 0; end
-
-        % Cálculo de radios alcanzables en el plano z
-        rho_max = sqrt(max(rmax^2 - z_plane^2, 0));
-        rho_min = sqrt(max(rmin^2 - z_plane^2, 0));
-
-        if rho_max < 1e-6
-            updateInfo('⚠️ No hay alcanzabilidad en ese z', [1 0.8 0.8]);
-            return;
-        end
-
-        % Construcción de objetivos (N puntos en círculo)
-        rho = max(rho_min, 0.75 * rho_max);
-        NPTS = 12;
-        ths  = linspace(0, 2*pi, NPTS + 1); ths(end) = [];
-        targets = zeros(NPTS, 3);
 
         for i = 1:NPTS
-            [xx, yy] = clampXYGivenZ(rho * cos(ths(i)), rho * sin(ths(i)), ...
-                                     z_plane, rmin, rmax);
-            targets(i, :) = [xx, yy, z_plane];
+            tgt = targets(i, :);
+
+            % Preparación de configuración de simulación individual
+            cfg = struct( ...
+                'L1', L1, 'L2', L2, ...
+                'max_iter', 1000, 'tol', tol_b, ...
+                'stable_needed', stable_needed, 'beta', beta, ...
+                'K_min_deg', Kmin_b, 'K_max_deg', Kmax_b, ...
+                'K_safety_ang_deg', K_safety_ang_deg, ...
+                'lambda_base', lambda_base, 'lambda_smallE', lambda_smallE, ...
+                'err_small_th', err_small_th, 'cond_boost', cond_boost, ...
+                'noise_on', noise_on_b, 'sigma_noise', sigma_noise_b, ...
+                'lambda_soft_on', lambda_soft_on_b, ...
+                'a_mu', a_mu_b, 'b_kappa', b_kappa_b, ...
+                'modeIdx', modeIdx_batch, 'fis1', fisBatch, ...
+                'Kp', Kp_b, 'Ki', Ki_b, 'Kd', Kd_b, ...
+                'Qx', Qx_b, 'Qy', Qy_b, 'Qz', Qz_b, 'R', Rv_b, ...
+                'dt_step_s', dt_step_s, ...
+                'JOINT_LIMITS', JOINT_LIMITS);
+
+            % Ejecución
+            sim = simulateOnce(tcur, tgt, cfg);
+            tcur = sim.theta_end(:);
+
+            % Recolección de resultados
+            r = struct();
+            r.pt         = i;
+            r.mode       = modeNames{m};
+            r.success    = sim.success;
+            r.steps      = sim.steps;
+            r.time_sim_s = sim.time_sim_s;
+            r.time_wall_s = sim.time_wall_s;
+            r.err_final  = sim.err_final;
+            r.x_ref      = tgt(1);
+            r.y_ref      = tgt(2);
+            r.z_ref      = tgt(3);
+            r.xe_end     = sim.ee_end(1);
+            r.ye_end     = sim.ee_end(2);
+            r.ze_end     = sim.ee_end(3);
+            r.t1_ini_deg = rad2deg(sim.theta_ini(1));
+            r.t2_ini_deg = rad2deg(sim.theta_ini(2));
+            r.t3_ini_deg = rad2deg(sim.theta_ini(3));
+            r.t1_end_deg = rad2deg(sim.theta_end(1));
+            r.t2_end_deg = rad2deg(sim.theta_end(2));
+            r.t3_end_deg = rad2deg(sim.theta_end(3));
+            r.Kp         = Kp_b;
+            r.Ki         = Ki_b;
+            r.Kd         = Kd_b;
+            r.Qx         = Qx_b;
+            r.Qy         = Qy_b;
+            r.Qz         = Qz_b;
+            r.R          = Rv_b;
+
+            rows = [rows; r]; %#ok<AGROW>
+
+            simCount = simCount + 1;
+            waitbar(simCount / totalSims, wb, ...
+                sprintf('Progreso: %d/%d (%s - Punto %d)', ...
+                    simCount, totalSims, modeNames{m}, i));
         end
-
-        % Captura de opciones para batch (ruido, lambda adaptativo y PID/LQR/Fuzzy)
-        noise_on_b       = logical(get(chkNoise, 'Value'));
-        sigma_noise_b    = valOrZero(get(edSigma, 'String'));
-        lambda_soft_on_b = logical(get(chkLamSoft, 'Value'));
-        a_mu_b           = valOrZero(get(edAMu, 'String'));
-        b_kappa_b        = valOrZero(get(edBK, 'String'));
-
-        Kp_b = str2double(get(edKp, 'String')); if isnan(Kp_b), Kp_b = Kp_def; end
-        Ki_b = str2double(get(edKi, 'String')); if isnan(Ki_b), Ki_b = Ki_def; end
-        Kd_b = str2double(get(edKd, 'String')); if isnan(Kd_b), Kd_b = Kd_def; end
-
-        Qx_b = posOrDefault(get(edQx, 'String'), Qx_def);
-        Qy_b = posOrDefault(get(edQy, 'String'), Qy_def);
-        Qz_b = posOrDefault(get(edQz, 'String'), Qz_def);
-        Rv_b = posOrDefault(get(edR,  'String'), R_def);
-
-        Kmin_b = str2double(get(edKmin, 'String'));
-        if isnan(Kmin_b), Kmin_b = K_min_deg; end
-        Kmax_b = str2double(get(edKmax, 'String'));
-        if isnan(Kmax_b), Kmax_b = K_max_deg; end
-
-        tol_b = str2double(get(edTol, 'String'));
-        if ~isfinite(tol_b) || tol_b <= 0, tol_b = 0.02; end
-
-        % Definición de modos incluidos en el batch
-        modeIds   = [1 2 3 4];
-        modeNames = {'PID', 'LQR', 'Fuzzy-Centroid', 'Fuzzy-Bisector'};
-
-        % Inicialización de estructura de resultados
-        init_theta = [theta1; theta2; theta3];
-        rows = [];
-
-        updateInfo('⏳ Ejecutando batch...', [1 1 0.8]);
-
-        % Construcción de barra de progreso
-        wb = waitbar(0, 'Ejecutando simulaciones batch...');
-        totalSims = numel(modeIds) * NPTS;
-        simCount  = 0;
-
-        % Bucle por modos y objetivos
-        for m = 1:numel(modeIds)
-            modeIdx_batch = modeIds(m);
-            tcur = init_theta;
-
-            % Ajuste del método de defuzzificación para el modo Fuzzy
-            fisBatch = fis1;
-            if modeIdx_batch == 3
-                try, fisBatch.DefuzzificationMethod = 'centroid'; end
-            elseif modeIdx_batch == 4
-                try, fisBatch.DefuzzificationMethod = 'bisector'; end
-            end
-
-            for i = 1:NPTS
-                tgt = targets(i, :);
-
-                % Preparación de configuración de simulación individual
-                cfg = struct( ...
-                    'L1', L1, 'L2', L2, ...
-                    'max_iter', 1000, 'tol', tol_b, ...
-                    'stable_needed', stable_needed, 'beta', beta, ...
-                    'K_min_deg', Kmin_b, 'K_max_deg', Kmax_b, ...
-                    'K_safety_ang_deg', K_safety_ang_deg, ...
-                    'lambda_base', lambda_base, 'lambda_smallE', lambda_smallE, ...
-                    'err_small_th', err_small_th, 'cond_boost', cond_boost, ...
-                    'noise_on', noise_on_b, 'sigma_noise', sigma_noise_b, ...
-                    'lambda_soft_on', lambda_soft_on_b, ...
-                    'a_mu', a_mu_b, 'b_kappa', b_kappa_b, ...
-                    'modeIdx', modeIdx_batch, 'fis1', fisBatch, ...
-                    'Kp', Kp_b, 'Ki', Ki_b, 'Kd', Kd_b, ...
-                    'Qx', Qx_b, 'Qy', Qy_b, 'Qz', Qz_b, 'R', Rv_b, ...
-                    'dt_step_s', dt_step_s, ...
-                    'JOINT_LIMITS', JOINT_LIMITS);
-
-                % Ejecución de la simulación y recolección de resultados
-                sim = simulateOnce(tcur, tgt, cfg);
-                tcur = sim.theta_end(:);
-
-                r = struct();
-                r.pt         = i;
-                r.mode       = modeNames{m};
-                r.success    = sim.success;
-                r.steps      = sim.steps;
-                r.time_sim_s = sim.time_sim_s;
-                r.time_wall_s = sim.time_wall_s;
-                r.err_final  = sim.err_final;
-                r.x_ref      = tgt(1);
-                r.y_ref      = tgt(2);
-                r.z_ref      = tgt(3);
-                r.xe_end     = sim.ee_end(1);
-                r.ye_end     = sim.ee_end(2);
-                r.ze_end     = sim.ee_end(3);
-                r.t1_ini_deg = rad2deg(sim.theta_ini(1));
-                r.t2_ini_deg = rad2deg(sim.theta_ini(2));
-                r.t3_ini_deg = rad2deg(sim.theta_ini(3));
-                r.t1_end_deg = rad2deg(sim.theta_end(1));
-                r.t2_end_deg = rad2deg(sim.theta_end(2));
-                r.t3_end_deg = rad2deg(sim.theta_end(3));
-                r.Kp         = Kp_b;
-                r.Ki         = Ki_b;
-                r.Kd         = Kd_b;
-                r.Qx         = Qx_b;
-                r.Qy         = Qy_b;
-                r.Qz         = Qz_b;
-                r.R          = Rv_b;
-
-                rows = [rows; r]; %#ok<AGROW>
-
-                simCount = simCount + 1;
-                waitbar(simCount / totalSims, wb, ...
-                    sprintf('Progreso: %d/%d (%s - Punto %d)', ...
-                        simCount, totalSims, modeNames{m}, i));
-            end
-        end
-        close(wb);
-
-        % Conversión a tabla, guardado en CSV y exportación a base workspace
-        T_all = struct2table(rows);
-        ts = datestr(now, 'yyyymmdd_HHMMSS');
-        csvfile = fullfile(outdir, sprintf('batch_results_%s.csv', ts));
-
-        try
-            writetable(T_all, csvfile);
-            assignin('base', 'T_batch', T_all);
-        catch
-            warning('No se pudo escribir CSV');
-        end
-
-        % Construcción de gráfico comparativo (tiempo promedio y desviación)
-        modesList = unique(T_all.mode, 'stable');
-        palette = [0   158 115; ...
-                   213 94  0;  ...
-                   0   114 178; ...
-                   230 159 0] / 255;
-
-        avg_time = zeros(numel(modesList), 1);
-        std_time = zeros(numel(modesList), 1);
-
-        for m = 1:numel(modesList)
-            idx = strcmp(T_all.mode, modesList{m});
-            avg_time(m) = mean(T_all.time_sim_s(idx), 'omitnan');
-            std_time(m) = std(T_all.time_sim_s(idx), 'omitnan');
-        end
-
-        figBatch = figure('Name', 'Comparación de Controladores (Batch)', ...
-            'Color', 'w', 'Position', [200 200 900 600]);
-
-        hold on; grid on;
-        for m = 1:numel(modesList)
-            errorbar(m, avg_time(m), std_time(m), 'o', ...
-                'Color', palette(m, :), ...
-                'MarkerEdgeColor', palette(m, :), ...
-                'MarkerFaceColor', palette(m, :), ...
-                'LineStyle', 'none', ...
-                'LineWidth', 2, ...
-                'CapSize', 12, ...
-                'MarkerSize', 10);
-        end
-
-        xlim([0.5 numel(modesList) + 0.5]);
-        xticks(1:numel(modesList));
-        xticklabels(modeNames);
-        ylabel('Tiempo promedio de convergencia (s)', 'FontSize', 11);
-        title('Comparación de Desempeño por Controlador', 'FontWeight', 'bold', 'FontSize', 12);
-
-        saveas(figBatch, fullfile(outdir, sprintf('comparison_plot_%s.png', ts)));
-
-        updateInfo(sprintf('✅ Batch completado: %s', outdir), [0.8 1 0.8]);
     end
+    close(wb);
+
+    % Conversión a tabla
+    T_all = struct2table(rows);
+
+    % Guardado
+    ts = datestr(now, 'yyyymmdd_HHMMSS');
+    csvfile = fullfile(outdir, sprintf('batch_results_%s.csv', ts));
+
+    try
+        writetable(T_all, csvfile);
+        assignin('base', 'T_batch', T_all);
+    catch
+        warning('No se pudo escribir CSV');
+    end
+
+    % Construcción de gráfico comparativo
+    modesList = unique(T_all.mode, 'stable');
+    palette = [0   158 115; ...
+               213 94  0;  ...
+               0   114 178; ...
+               230 159 0] / 255;
+
+    avg_time = zeros(numel(modesList), 1);
+    std_time = zeros(numel(modesList), 1);
+
+    for m = 1:numel(modesList)
+        idx = strcmp(T_all.mode, modesList{m});
+        avg_time(m) = mean(T_all.time_sim_s(idx), 'omitnan');
+        std_time(m) = std(T_all.time_sim_s(idx), 'omitnan');
+    end
+
+    figBatch = figure('Name', 'Comparación de Controladores (Batch)', ...
+        'Color', 'w', 'Position', [200 200 900 600]);
+
+    hold on; grid on;
+    for m = 1:numel(modesList)
+        errorbar(m, avg_time(m), std_time(m), 'o', ...
+            'Color', palette(m, :), ...
+            'MarkerEdgeColor', palette(m, :), ...
+            'MarkerFaceColor', palette(m, :), ...
+            'LineStyle', 'none', ...
+            'LineWidth', 2, ...
+            'CapSize', 12, ...
+            'MarkerSize', 10);
+    end
+
+
+    saveas(figBatch, fullfile(outdir, sprintf('comparison_plot_%s.png', ts)));
+    %% ============================================================
+    %  FIGURAS DEL BATCH – PID, LQR, FIS-C, FIS-B
+    %% ============================================================
+    % --- columnas de diferencias para cada eje ---
+    T_all.dX = T_all.x_ref - T_all.xe_end;
+    T_all.dY = T_all.y_ref - T_all.ye_end;
+    T_all.dZ = T_all.z_ref - T_all.ze_end;
+    
+
+    modesList = {'PID','LQR','Fuzzy-Centroid','Fuzzy-Bisector'};
+    modeShort = {'PID','LQR','FIS-C','FIS-B'};
+    palette = lines(4);
+
+    % --- PUNTOS (CORREGIDO: USAR 'pt', NO 'point') ---
+    pts = unique(T_all.pt);
+
+
+    %% ============================================================
+    % FIGURA 1 — Pasos (iteraciones) por punto y por modo
+    %% ============================================================
+
+    fig1 = figure('Name','Pasos por punto','Color','w','Position',[200 200 900 600]);
+    hold on; grid on;
+
+    for m = 1:numel(modesList)
+        idx = strcmp(T_all.mode, modesList{m});
+        plot(T_all.pt(idx), T_all.steps(idx), '-o', ...
+            'Color', palette(m,:), ...
+            'MarkerFaceColor', palette(m,:), ...
+            'LineWidth', 2, 'MarkerSize', 6, ...
+            'DisplayName', modeShort{m});
+    end
+
+xlabel('Punto','FontSize',16);
+ylabel('Pasos','FontSize',16);
+title('Pasos (iteraciones) por punto','FontWeight','bold','FontSize',16);
+legend('Location','best','FontSize',14);
+
+
+    saveas(fig1, fullfile(outdir, 'batch_steps_per_point.png'));
+    saveas(fig1, fullfile(outdir, 'batch_steps_per_point.eps'), 'epsc');
+
+
+    %% ============================================================
+    % FIGURA 2 — Error final ||e||_final por punto y por modo
+    %% ============================================================
+
+    fig2 = figure('Name','Error final por punto','Color','w','Position',[200 200 900 600]);
+    hold on; grid on;
+
+    bw = 0.18;  % ancho barras
+
+    for m = 1:numel(modesList)
+        idx = strcmp(T_all.mode, modesList{m});
+        bar(pts + (m-2.5)*bw, T_all.err_final(idx), ...
+            'FaceColor', palette(m,:), ...
+            'BarWidth', bw, ...
+            'DisplayName', modeShort{m});
+    end
+
+xlabel('Punto','FontSize',16);
+ylabel('||e||_{final}','FontSize',16);
+title('Error final por punto','FontWeight','bold','FontSize',16);
+legend('Location','best','FontSize',14);
+
+
+    saveas(fig2, fullfile(outdir, 'batch_err_final_per_point.png'));
+    saveas(fig2, fullfile(outdir, 'batch_err_final_per_point.eps'), 'epsc');
+
+
+    %% ============================================================
+% FIGURA 3 — |ΔX|, |ΔY|, |ΔZ| por punto y por modo
+%% ============================================================
+
+%% ============================================================
+% FIGURA 3 — |ΔX|, |ΔY|, |ΔZ| por punto y por modo  (CORREGIDA)
+%% ============================================================
+
+% --- columnas de diferencias (si no existen) ---
+T_all.dX = T_all.x_ref - T_all.xe_end;
+T_all.dY = T_all.y_ref - T_all.ye_end;
+T_all.dZ = T_all.z_ref - T_all.ze_end;
+
+% --- puntos (usando la columna correcta) ---
+pts = unique(T_all.pt);
+
+fig3 = figure('Name','Diferencias eje por punto', ...
+    'Color','w','Position',[200 200 900 900]);
+
+axesNames = {'|ΔX|','|ΔY|','|ΔZ|'};
+fields    = {'dX','dY','dZ'};     % columnas reales
+
+for ax = 1:3
+    subplot(3,1,ax);
+    hold on; grid on;
+
+    for m = 1:numel(modesList)
+        idx = strcmp(T_all.mode, modesList{m});
+        bar(pts + (m-2.5)*bw, abs(T_all.(fields{ax})(idx)), ...
+            'FaceColor', palette(m,:), ...
+            'BarWidth', bw, ...
+            'DisplayName', modeShort{m});
+    end
+
+    ylabel(axesNames{ax}, 'FontSize', 16);      % eje Y grande
+    title([axesNames{ax} ' por punto'], ...
+        'FontWeight','bold','FontSize',16);     % título grande
+end
+
+xlabel('Punto', 'FontSize', 16);                % eje X grande
+legend('Location','best','FontSize',14);        % leyenda tamaño 14
+
+saveas(fig3, fullfile(outdir, 'batch_axis_errors.png'));
+saveas(fig3, fullfile(outdir, 'batch_axis_errors.eps'), 'epsc');
+
+
+%% ============================================================
+% FIGURA 4 — Tiempo de simulación por punto y por modo
+%% ============================================================
+
+fig4 = figure('Name','Tiempo por punto','Color','w','Position',[200 200 900 600]);
+hold on; grid on;
+
+for m = 1:numel(modesList)
+    idx = strcmp(T_all.mode, modesList{m});
+    plot(pts, T_all.time_sim_s(idx), '-o', ...
+        'LineWidth', 2, 'Color', palette(m,:), ...
+        'MarkerFaceColor', palette(m,:), ...
+        'DisplayName', modeShort{m});   % ← AQUI SE CORRIGE
+end
+
+xlabel('Punto','FontSize',16);
+ylabel('Tiempo de simulación (s)','FontSize',16);
+title('Tiempo por punto y controlador','FontWeight','bold','FontSize',16);
+
+% Leyenda con nombres correctos
+legend('Location','best','FontSize',14);
+
+saveas(fig4, fullfile(outdir, 'batch_time_per_point.png'));
+saveas(fig4, fullfile(outdir, 'batch_time_per_point.eps'), 'epsc');
+
+
+
+
+
+    %% Mensaje final
+    updateInfo(sprintf('✅ Batch completado: %s', outdir), [0.8 1 0.8]);
+end
+
 
     %% ======= FUNCIONES DE MOUSE =======
     function onMouseDown(~, ~)
