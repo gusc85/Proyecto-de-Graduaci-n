@@ -27,9 +27,10 @@ tt  = [];
 u_act = 0;
 
 %% ---------- Criterios de convergencia ----------
-thr_th_deg_pid_lqr = 2.0;   % umbral angular PID/LQR (grados)
-thr_dth_deg        = 5.0;   % umbral velocidad angular (grados/s)
-dwell_s   = 0.50;           % tiempo de estabilización (s)
+thr_th_deg_pid_lqr = 3.0;
+thr_dth_deg        = 8.0;
+dwell_s            = 0.30;
+
 dwell_N   = ceil(dwell_s/dt);
 ok_cnt    = 0;
 autoStop  = true;
@@ -70,10 +71,10 @@ tmax_fuzC = 20;
 tmax_fuzB = 20;
 
 %% ---------- TIEMPOS DE BATCH (CORRIDAS AUTOMÁTICAS) ----------
-batch_tmax_pid  = 1.7;
-batch_tmax_lqr  = 1.7;
-batch_tmax_fuzC = 20;
-batch_tmax_fuzB = 20;
+batch_tmax_pid  = 10;
+batch_tmax_lqr  = 10;
+batch_tmax_fuzC = 40;
+batch_tmax_fuzB = 40;
 
 %% ---------- Crear ventana principal ----------
 fig = figure('Name', 'Simulador Péndulo Invertido - Control Avanzado', ...
@@ -760,25 +761,20 @@ update_counter = 0;
 
         figE = figure('Color','w','Position',[160 160 920 420], 'Name','Error vs Tiempo');
         axE = axes(figE); hold(axE,'on'); grid(axE,'on'); box(axE,'on');
-        plot(axE, tplot, e_deg, 'LineWidth', 2.5);
+        hErr = plot(axE, tplot, e_deg, 'LineWidth', 2.5);
         yline(axE, 0, '--k', 'LineWidth', 1.5, 'HandleVisibility', 'off');
-        xlabel(axE, 'Tiempo (s)', 'FontWeight','bold');
-        ylabel(axE, 'Error \theta (grados)', 'FontWeight','bold');
+        xlabel(axE, 'Tiempo (s)', 'FontWeight','bold', 'FontSize', 15);
+        ylabel(axE, 'Error \theta (grados)', 'FontWeight','bold', 'FontSize', 15);
 
         mnames = {'PID','LQR','Fuzzy - Centroid','Fuzzy - Bisector'};
         title(axE, sprintf('Error angular vs tiempo — %s', mnames{mode_now}), ...
-            'FontWeight','bold','FontSize',12);
+            'FontWeight','bold','FontSize',15);
 
         xlim(axE, [0, max(xwin, max(tplot))]);
         ylim(axE, 'tight');
 
-        % Texto con error final
-        if ~isempty(tplot)
-            txt = sprintf('Error final: %.2f° a t=%.2fs', e_deg(end), tplot(end));
-            text(axE, 0.98*max(tplot), e_deg(end), txt, ...
-                'HorizontalAlignment','right','VerticalAlignment','bottom', ...
-                'FontSize',9,'BackgroundColor',[1 1 1 0.8]);
-        end
+        legend(axE, hErr, {'Error \theta (grados)'}, 'Location','southeast','FontSize',12);
+
         drawnow;
     end
 
@@ -992,9 +988,9 @@ function simulate_compare_and_save(outdir, P, showFigures)
         ax = nexttile;
         hold(ax, 'on'); grid(ax, 'on'); box(ax, 'on');
         title(ax, sprintf('Errores θ (grados) – %s', md.name), ...
-            'FontWeight', 'bold', 'FontSize', 11);
-        xlabel(ax, 'Tiempo (s)', 'FontWeight', 'bold');
-        ylabel(ax, 'θ (grados)', 'FontWeight', 'bold');
+            'FontWeight', 'bold', 'FontSize', 14);
+        xlabel(ax, 'Tiempo (s)', 'FontWeight', 'bold', 'FontSize', 14);
+        ylabel(ax, 'θ (grados)', 'FontWeight', 'bold', 'FontSize', 14);
 
         switch md.kind
             case 'PID'
@@ -1080,8 +1076,8 @@ function simulate_compare_and_save(outdir, P, showFigures)
     ax2 = axes(figSum);
     hold(ax2, 'on'); grid(ax2, 'on'); box(ax2, 'on');
     title(ax2, 'Tiempos de Convergencia por Método (Promedio ± DE)', ...
-        'FontWeight', 'bold', 'FontSize', 12);
-    ylabel(ax2, 'Tiempo de convergencia (s)', 'FontWeight', 'bold', 'FontSize', 11);
+        'FontWeight', 'bold', 'FontSize', 15);
+    ylabel(ax2, 'Tiempo de convergencia (s)', 'FontWeight', 'bold', 'FontSize', 15);
 
     xpos = 1:4;
     hb = bar(ax2, xpos, means, 0.65, 'FaceColor', 'flat', ...
@@ -1122,7 +1118,7 @@ function simulate_compare_and_save(outdir, P, showFigures)
             'HorizontalAlignment', 'center', ...
             'VerticalAlignment', 'bottom', ...
             'FontWeight', 'bold', ...
-            'FontSize', 9.5, ...
+            'FontSize', 12, ...
             'Color', [0.2 0.2 0.2]);
     end
 
